@@ -17,21 +17,21 @@ logger = logging.getLogger(__name__)
 # Автоматическое определение режима
 def get_environment_mode():
     """Определяет, где запущено приложение"""
-    # Streamlit Cloud или другая облачная платформа
-    cloud_env_vars = ['STREAMLIT_SHARING', 'STREAMLIT_SERVER_HEADLESS', 'COLAB_GPU']
+    cloud_env_vars = ['STREAMLIT_SHARING', 'STREAMLIT_SERVER_HEADLESS']
     if any(var in os.environ for var in cloud_env_vars):
         return "CLOUD"
 
-    # Локальная Windows с правами администратора
+    # Проверяем, доступен ли scapy (только локально)
     try:
+        import scapy
+        # Проверяем права администратора (Windows)
         if os.name == 'nt':
             import ctypes
             if ctypes.windll.shell32.IsUserAnAdmin():
                 return "LOCAL_ADMIN"
-    except:
+    except ImportError:
         pass
 
-    # Локальная Windows/Mac/Linux без прав
     return "LOCAL_NO_ADMIN"
 
 
@@ -46,35 +46,37 @@ st.set_page_config(
 
 st.title("🌐 Network Traffic Analyzer")
 
-# Показываем информацию о режиме
+# Информация о режиме работы
 if ENVIRONMENT_MODE == "CLOUD":
-    st.warning("🌐 **Веб-версия**: Режим демонстрации с искусственными данными")
+    st.success("🚀 **Веб-версия запущена успешно!**")
     st.info("""
-    💡 **Для реального мониторинга сети:**
-    - Скачайте код с GitHub
-    - Запустите локально с правами администратора
-    - Получите доступ к реальному сетевому трафику
+    💡 **Это демонстрационная версия с искусственными данными**
+
+    **Для реального мониторинга сети:**
+    1. 📥 Скачайте код с GitHub
+    2. 🖥️ Установите Python
+    3. ⚡ Запустите с правами администратора
+    4. 🔴 Получите доступ к реальному сетевому трафику
     """)
     DEMO_MODE = True
 elif ENVIRONMENT_MODE == "LOCAL_ADMIN":
-    st.success("🔴 **Локальная версия**: Режим реального захвата пакетов")
+    st.success("🔴 **Локальная версия: Режим реального захвата пакетов**")
     DEMO_MODE = False
 else:
-    st.warning("💻 **Локальная версия**: Запустите с правами администратора для реального захвата")
+    st.warning("💻 **Локальная версия: Запустите с правами администратора**")
     DEMO_MODE = True
 
 
-class UniversalPacketProcessor:
-    """Универсальный процессор для любого окружения"""
+class CloudPacketProcessor:
+    """Процессор пакетов для облачной и локальной работы"""
 
     def __init__(self, demo_mode=True):
         self.demo_mode = demo_mode
         self.protocol_map = {
-            0: 'HOPOPT', 1: 'ICMP', 2: 'IGMP', 6: 'TCP', 17: 'UDP',
-            41: 'IPv6', 47: 'GRE', 50: 'ESP', 51: 'AH', 89: 'OSPF'
+            1: 'ICMP', 6: 'TCP', 17: 'UDP', 2: 'IGMP'
         }
 
-        # Основные структуры данных
+        # Структуры данных
         self.start_time = datetime.now()
         self.lock = threading.Lock()
         self.packet_data = []
@@ -94,8 +96,7 @@ class UniversalPacketProcessor:
         # Порты для классификации
         self.common_ports = {
             80: 'HTTP', 443: 'HTTPS', 53: 'DNS', 22: 'SSH',
-            25: 'SMTP', 110: 'POP3', 143: 'IMAP', 993: 'IMAPS',
-            995: 'POP3S', 21: 'FTP', 23: 'Telnet', 3389: 'RDP'
+            25: 'SMTP', 110: 'POP3', 143: 'IMAP'
         }
 
         if not demo_mode:
@@ -116,23 +117,38 @@ class UniversalPacketProcessor:
         return anomalies
 
     def setup_demo_capture(self):
+        """Генерация реалистичных демо-данных"""
+
         def demo_capture():
-            sources = [f"192.168.1.{i}" for i in range(1, 50)] + ["10.0.0.5", "172.16.0.10"]
-            destinations = ['8.8.8.8', '1.1.1.1', '8.8.4.4', '10.0.0.1', 'google.com', 'youtube.com']
+            sources = [f"192.168.1.{i}" for i in range(1, 30)]
+            destinations = ['8.8.8.8', '1.1.1.1', '8.8.4.4', 'google.com', 'youtube.com', 'github.com']
             protocols = ['TCP', 'UDP', 'ICMP']
+
+            # Начальные значения для реалистичного поведения
+            base_traffic = 10
+            traffic_variation = 15
 
             while self._running:
                 try:
                     current_time = datetime.now()
                     current_second = current_time.replace(microsecond=0)
 
-                    packets_to_generate = random.randint(5, 25)
+                    # Реалистичная генерация трафика (пуассоновское распределение)
+                    packets_this_cycle = max(0, int(random.gauss(base_traffic, traffic_variation)))
 
                     with self.lock:
-                        for _ in range(packets_to_generate):
-                            protocol = random.choice(protocols)
-                            src_port = random.choice([80, 443, 53, 22, 8080, 3000, 5000])
+                        for _ in range(packets_this_cycle):
+                            protocol = random.choices(protocols, weights=[70, 25, 5])[0]  # TCP 70%, UDP 25%, ICMP 5%
+                            src_port = random.choice([80, 443, 53, 22, 8080, 3000])
                             dst_port = random.choice([80, 443, 53, 22, 8080])
+
+                            # Разные размеры пакетов для разных протоколов
+                            if protocol == 'TCP':
+                                size = random.randint(40, 1500)
+                            elif protocol == 'UDP':
+                                size = random.randint(40, 512)
+                            else:  # ICMP
+                                size = random.randint(60, 128)
 
                             packet = {
                                 'timestamp': current_time,
@@ -141,11 +157,12 @@ class UniversalPacketProcessor:
                                 'protocol': protocol,
                                 'src_port': src_port,
                                 'dst_port': dst_port,
-                                'size': random.randint(60, 1200),
+                                'size': size,
                                 'service': self.classify_port(dst_port)
                             }
 
-                            if random.random() < 0.03:
+                            # Иногда добавляем аномалии (2% chance)
+                            if random.random() < 0.02:
                                 packet['size'] = random.randint(2000, 5000)
                                 packet['anomalies'] = ["Большой пакет для тестирования"]
 
@@ -157,6 +174,7 @@ class UniversalPacketProcessor:
                             self.total_packets += 1
                             self.current_second_stats[protocol] += 1
 
+                        # Обновляем timeline каждую секунду
                         if current_time - self.last_timeline_update >= timedelta(seconds=1):
                             timeline_entry = {
                                 'timestamp': current_second,
@@ -169,12 +187,15 @@ class UniversalPacketProcessor:
                             self.last_timeline_update = current_time
                             self.current_second_stats.clear()
 
-                            if len(self.timeline_data) > 120:
+                            # Храним только последние 60 секунд
+                            if len(self.timeline_data) > 60:
                                 self.timeline_data.pop(0)
 
-                        if len(self.packet_data) > 5000:
-                            self.packet_data = self.packet_data[-5000:]
+                        # Ограничиваем общее количество пакетов
+                        if len(self.packet_data) > 2000:
+                            self.packet_data = self.packet_data[-2000:]
 
+                    # Реалистичная задержка
                     time.sleep(0.05)
 
                 except Exception as e:
@@ -183,8 +204,10 @@ class UniversalPacketProcessor:
 
         thread = threading.Thread(target=demo_capture, daemon=True)
         thread.start()
+        logger.info("Demo capture started")
 
     def setup_real_capture(self):
+        """Реальный захват пакетов (только локально)"""
         try:
             from scapy.all import sniff, IP, TCP, UDP
 
@@ -271,12 +294,14 @@ class UniversalPacketProcessor:
 
             thread = threading.Thread(target=real_capture, daemon=True)
             thread.start()
+            logger.info("Real capture started")
 
-        except ImportError:
+        except ImportError as e:
+            logger.warning(f"Scapy not available: {e}, falling back to demo mode")
             self.demo_mode = True
             self.setup_demo_capture()
 
-    # ... остальные методы (get_dataframe, get_protocol_stats_df и т.д.) ...
+    # Методы для получения данных
     def get_dataframe(self):
         with self.lock:
             return pd.DataFrame(self.packet_data)
@@ -344,7 +369,7 @@ class UniversalPacketProcessor:
 
 # Инициализация процессора
 if 'processor' not in st.session_state:
-    st.session_state.processor = UniversalPacketProcessor(demo_mode=DEMO_MODE)
+    st.session_state.processor = CloudPacketProcessor(demo_mode=DEMO_MODE)
 
 processor = st.session_state.processor
 summary = processor.get_traffic_summary()
@@ -357,12 +382,12 @@ st.sidebar.write(f"**Режим:** {mode_status}")
 if ENVIRONMENT_MODE == "CLOUD":
     st.sidebar.info("""
     **Для реального мониторинга:**
-    1. Скачайте код с GitHub
-    2. Установите Python и зависимости
-    3. Запустите с правами администратора
+    1. 📥 Скачайте код с GitHub
+    2. 🐍 Установите Python 3.8+
+    3. ⚡ Запустите с правами администратора
     """)
 
-# Основные метрики и вкладки (остальной код как раньше)...
+# Основные метрики
 st.subheader("📈 Основные метрики")
 col1, col2, col3, col4, col5 = st.columns(5)
 
@@ -381,49 +406,143 @@ with col5:
 tab1, tab2, tab3 = st.tabs(["📊 Обзор трафика", "🌐 Аналитика сервисов", "⚠️ Безопасность"])
 
 with tab1:
-    # Графики из предыдущей версии
+    st.subheader("📈 Динамика трафика")
+
+    # График пакетов по протоколам
     protocols_timeline_df = processor.get_protocols_timeline_df()
     if len(protocols_timeline_df) > 0:
-        fig = px.line(
+        fig_protocols = px.line(
             protocols_timeline_df,
             x='timestamp',
             y='packets_per_second',
             color='protocol',
-            title="Пакеты в секунду по протоколам"
+            title="Пакеты в секунду по протоколам",
+            labels={'packets_per_second': 'Пакетов/секунду', 'timestamp': 'Время'},
+            color_discrete_map={'TCP': 'blue', 'UDP': 'green', 'ICMP': 'red'}
         )
-        st.plotly_chart(fig, use_container_width=True)
+        fig_protocols.update_layout(hovermode='x unified')
+        st.plotly_chart(fig_protocols, use_container_width=True)
+
+    # Распределение протоколов
+    protocol_df = processor.get_protocol_stats_df()
+    if len(protocol_df) > 0:
+        col1, col2 = st.columns(2)
+
+        with col1:
+            fig_pie = px.pie(
+                protocol_df,
+                values='count',
+                names='protocol',
+                title="Распределение протоколов"
+            )
+            st.plotly_chart(fig_pie, use_container_width=True)
+
+        with col2:
+            fig_bar = px.bar(
+                protocol_df,
+                x='protocol',
+                y='percentage',
+                title="Процентное распределение",
+                text=protocol_df['percentage'].round(1).astype(str) + '%'
+            )
+            fig_bar.update_traces(textposition='outside')
+            st.plotly_chart(fig_bar, use_container_width=True)
 
 with tab2:
+    st.subheader("🌐 Анализ сервисов")
+
     service_df = processor.get_service_stats_df()
     if len(service_df) > 0:
-        fig = px.pie(service_df, values='count', names='service', title="Распределение по сервисам")
-        st.plotly_chart(fig, use_container_width=True)
+        col1, col2 = st.columns(2)
+
+        with col1:
+            fig_services = px.pie(
+                service_df,
+                values='count',
+                names='service',
+                title="Распределение по сервисам"
+            )
+            st.plotly_chart(fig_services, use_container_width=True)
+
+        with col2:
+            # Топ источников
+            sources_df = pd.DataFrame([
+                {'source': source, 'count': count}
+                for source, count in list(processor.source_stats.items())[:10]
+            ])
+
+            if len(sources_df) > 0:
+                fig_sources = px.bar(
+                    sources_df,
+                    x='source',
+                    y='count',
+                    title="Топ 10 источников трафика"
+                )
+                st.plotly_chart(fig_sources, use_container_width=True)
 
 with tab3:
+    st.subheader("⚠️ Мониторинг безопасности")
+
     anomalies_df = processor.get_anomalies_df()
     if len(anomalies_df) > 0:
-        st.warning(f"Обнаружено аномалий: {len(anomalies_df)}")
-        st.dataframe(anomalies_df, use_container_width=True)
+        st.warning(f"🚨 Обнаружено подозрительных событий: {len(anomalies_df)}")
+
+        if 'timestamp' in anomalies_df.columns:
+            anomalies_df['time'] = pd.to_datetime(anomalies_df['timestamp']).dt.strftime('%H:%M:%S')
+            st.dataframe(anomalies_df[['time', 'source', 'anomaly']], use_container_width=True)
     else:
-        st.success("✅ Аномалий не обнаружено")
+        st.success("✅ Подозрительная активность не обнаружена")
+
+    # Статистика безопасности
+    st.subheader("📊 Статистика безопасности")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.metric("Всего пакетов", summary['total_packets'])
+        st.metric("Уникальных источников", summary['unique_sources'])
+
+    with col2:
+        st.metric("Обнаружено аномалий", summary['anomalies_detected'])
+        st.metric("Средний размер пакета", f"{summary['avg_packet_size']:.1f} байт")
+
+# Детальные данные
+st.sidebar.markdown("---")
+if st.sidebar.checkbox("Показать детальные данные"):
+    st.subheader("📋 Детальные данные")
+
+    df = processor.get_dataframe()
+    if len(df) > 0:
+        display_df = df.tail(30).copy()
+        if 'timestamp' in display_df.columns:
+            display_df['time'] = pd.to_datetime(display_df['timestamp']).dt.strftime('%H:%M:%S')
+
+        columns_to_show = ['time', 'source', 'destination', 'protocol', 'service', 'size']
+        if 'anomalies' in display_df.columns:
+            columns_to_show.append('anomalies')
+
+        st.dataframe(display_df[columns_to_show], use_container_width=True, height=400)
 
 # Кнопки управления
 st.sidebar.markdown("---")
-if st.sidebar.button("🔄 Перезапустить"):
+if st.sidebar.button("🔄 Перезапустить сбор данных"):
     if 'processor' in st.session_state:
         st.session_state.processor.stop()
     st.session_state.clear()
     st.rerun()
 
-# Инструкция для пользователей
+# Инструкция
 st.sidebar.markdown("---")
-st.sidebar.subheader("📖 Инструкция")
+st.sidebar.subheader("ℹ️ О приложении")
 st.sidebar.write("""
-1. **Веб-версия**: Только демонстрация
-2. **Локальный запуск**: Реальный мониторинг
-3. **Требуется**: Права администратора
+**Network Traffic Analyzer** - инструмент для мониторинга сетевого трафика.
+
+**Возможности:**
+- 📊 Анализ протоколов
+- 🌐 Классификация сервисов  
+- ⚠️ Обнаружение аномалий
+- 📈 Визуализация в реальном времени
 """)
 
 # Авто-обновление
-time.sleep(3)
+time.sleep(2)
 st.rerun()
